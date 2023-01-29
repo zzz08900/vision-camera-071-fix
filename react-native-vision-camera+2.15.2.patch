@@ -1,0 +1,323 @@
+diff --git a/node_modules/react-native-vision-camera/android/build.gradle b/node_modules/react-native-vision-camera/android/build.gradle
+index 0b623d5..e6c81c2 100644
+--- a/node_modules/react-native-vision-camera/android/build.gradle
++++ b/node_modules/react-native-vision-camera/android/build.gradle
+@@ -17,25 +17,25 @@ static def findNodeModules(baseDir) {
+   throw new GradleException("VisionCamera: Failed to find node_modules/ path!")
+ }
+ static def findNodeModulePath(baseDir, packageName) {
+-    def basePath = baseDir.toPath().normalize()
+-    // Node's module resolution algorithm searches up to the root directory,
+-    // after which the base path will be null
+-    while (basePath) {
+-        def candidatePath = Paths.get(basePath.toString(), "node_modules", packageName)
+-        if (candidatePath.toFile().exists()) {
+-            return candidatePath.toString()
+-        }
+-        basePath = basePath.getParent()
++  def basePath = baseDir.toPath().normalize()
++  // Node's module resolution algorithm searches up to the root directory,
++  // after which the base path will be null
++  while (basePath) {
++    def candidatePath = Paths.get(basePath.toString(), "node_modules", packageName)
++    if (candidatePath.toFile().exists()) {
++      return candidatePath.toString()
+     }
+-    return null
++    basePath = basePath.getParent()
++  }
++  return null
+ }
+ 
+ def isNewArchitectureEnabled() {
+-    // To opt-in for the New Architecture, you can either:
+-    // - Set `newArchEnabled` to true inside the `gradle.properties` file
+-    // - Invoke gradle with `-newArchEnabled=true`
+-    // - Set an environment variable `ORG_GRADLE_PROJECT_newArchEnabled=true`
+-    return project.hasProperty("newArchEnabled") && project.newArchEnabled == "true"
++  // To opt-in for the New Architecture, you can either:
++  // - Set `newArchEnabled` to true inside the `gradle.properties` file
++  // - Invoke gradle with `-newArchEnabled=true`
++  // - Set an environment variable `ORG_GRADLE_PROJECT_newArchEnabled=true`
++  return project.hasProperty("newArchEnabled") && project.newArchEnabled == "true"
+ }
+ 
+ def nodeModules = findNodeModules(projectDir)
+@@ -55,13 +55,13 @@ rootProject.getSubprojects().forEach({project ->
+ })
+ def jsRuntimeDir = {
+   if (FOR_HERMES) {
+-      if (REACT_NATIVE_VERSION >= 69) {
+-          return Paths.get(CMAKE_NODE_MODULES_DIR, "react-native", "sdks", "hermes")
+-      } else {
+-          return Paths.get(CMAKE_NODE_MODULES_DIR, "hermes-engine")
+-      }
++    if (REACT_NATIVE_VERSION >= 69) {
++      return Paths.get(CMAKE_NODE_MODULES_DIR, "react-native", "sdks", "hermes")
++    } else {
++      return Paths.get(CMAKE_NODE_MODULES_DIR, "hermes-engine")
++    }
+   } else {
+-      return Paths.get(CMAKE_NODE_MODULES_DIR, "react-native", "ReactCommon", "jsi")
++    return Paths.get(CMAKE_NODE_MODULES_DIR, "react-native", "ReactCommon", "jsi")
+   }
+ }.call()
+ logger.warn("VisionCamera: Building with ${FOR_HERMES ? "Hermes" : "JSC"}...")
+@@ -101,13 +101,13 @@ def getExtOrIntegerDefault(name) {
+ }
+ 
+ def resolveBuildType() {
+-    def buildType = "debug"
+-    tasks.all({ task ->
+-        if (task.name == "buildCMakeRelease") {
+-            buildType = "release"
+-        }
+-    })
+-    return buildType
++  def buildType = "debug"
++  tasks.all({ task ->
++    if (task.name == "buildCMakeRelease") {
++      buildType = "release"
++    }
++  })
++  return buildType
+ }
+ 
+ // plugin.js file only exists since REA v2.
+@@ -272,15 +272,22 @@ dependencies {
+     //noinspection GradleDynamicVersion
+     extractJNI("com.facebook.fbjni:fbjni:+")
+ 
+-    def rnAarMatcher = "**/react-native/**/*${resolveBuildType()}.aar"
+-    if (REACT_NATIVE_VERSION < 69) {
+-      rnAarMatcher = "**/**/*.aar"
++    if (REACT_NATIVE_VERSION >= 71) {
++      def jscAAR = fileTree("${nodeModules}/jsc-android/dist/org/webkit/android-jsc").matching({ it.include "**/**/*.aar" }).singleFile
++      def jsEngine = FOR_HERMES ? "hermes" : "jsc"
++      def reaAAR = "${nodeModules}/react-native-reanimated/android/react-native-reanimated-${REACT_NATIVE_VERSION}-${jsEngine}.aar"
++      extractJNI(files(jscAAR, reaAAR))
++    } else {
++      def rnAarMatcher = "**/react-native/**/*${resolveBuildType()}.aar"
++      if (REACT_NATIVE_VERSION < 69) {
++        rnAarMatcher = "**/**/*.aar"
++      }
++      def rnAAR = fileTree("$reactNative/android").matching({ it.include rnAarMatcher }).singleFile
++      def jscAAR = fileTree("${nodeModules}/jsc-android/dist/org/webkit/android-jsc").matching({ it.include "**/**/*.aar" }).singleFile
++      def jsEngine = FOR_HERMES ? "hermes" : "jsc"
++      def reaAAR = "${nodeModules}/react-native-reanimated/android/react-native-reanimated-${REACT_NATIVE_VERSION}-${jsEngine}.aar"
++      extractJNI(files(rnAAR, jscAAR, reaAAR))
+     }
+-    def rnAAR = fileTree("$reactNative/android").matching({ it.include rnAarMatcher }).singleFile
+-    def jscAAR = fileTree("${nodeModules}/jsc-android/dist/org/webkit/android-jsc").matching({ it.include "**/**/*.aar" }).singleFile
+-    def jsEngine = FOR_HERMES ? "hermes" : "jsc"
+-    def reaAAR = "${nodeModules}/react-native-reanimated/android/react-native-reanimated-${REACT_NATIVE_VERSION}-${jsEngine}.aar"
+-    extractJNI(files(rnAAR, jscAAR, reaAAR))
+   }
+ 
+   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+@@ -452,83 +459,100 @@ if (ENABLE_FRAME_PROCESSORS) {
+   or https://github.com/reactwg/react-native-new-architecture/discussions/4
+   */
+   if (REACT_NATIVE_VERSION >= 69 && !isNewArchitectureEnabled()) {
+-      // copied from `react-native/ReactAndroid/hermes-engine/build.gradle`
++    // copied from `react-native/ReactAndroid/hermes-engine/build.gradle`
+ 
+-      def customDownloadDir = System.getenv("REACT_NATIVE_DOWNLOADS_DIR")
+-      def downloadDir = customDownloadDir ? new File(customDownloadDir) : new File(reactNative, "sdks/download")
++    def customDownloadDir = System.getenv("REACT_NATIVE_DOWNLOADS_DIR")
++    def downloadDir = customDownloadDir ? new File(customDownloadDir) : new File(reactNative, "sdks/download")
+ 
+-      // By default we are going to download and unzip hermes inside the /sdks/hermes folder
+-      // but you can provide an override for where the hermes source code is located.
+-      def hermesDir = System.getenv("REACT_NATIVE_OVERRIDE_HERMES_DIR") ?: new File(reactNative, "sdks/hermes")
++    // By default we are going to download and unzip hermes inside the /sdks/hermes folder
++    // but you can provide an override for where the hermes source code is located.
++    def hermesDir = System.getenv("REACT_NATIVE_OVERRIDE_HERMES_DIR") ?: new File(reactNative, "sdks/hermes")
+ 
+-      def hermesVersion = "main"
+-      def hermesVersionFile = new File(reactNative, "sdks/.hermesversion")
+-      if (hermesVersionFile.exists()) {
+-          hermesVersion = hermesVersionFile.text
+-      }
++    def hermesVersion = "main"
++    def hermesVersionFile = new File(reactNative, "sdks/.hermesversion")
++    if (hermesVersionFile.exists()) {
++      hermesVersion = hermesVersionFile.text
++    }
+ 
+-      task downloadHermes(type: Download) {
+-          src("https://github.com/facebook/hermes/tarball/${hermesVersion}")
+-          onlyIfNewer(true)
+-          overwrite(false)
+-          dest(new File(downloadDir, "hermes.tar.gz"))
+-      }
++    task downloadHermes(type: Download) {
++      src("https://github.com/facebook/hermes/tarball/${hermesVersion}")
++      onlyIfNewer(true)
++      overwrite(false)
++      dest(new File(downloadDir, "hermes.tar.gz"))
++    }
+ 
+-      task unzipHermes(dependsOn: downloadHermes, type: Copy) {
+-          from(tarTree(downloadHermes.dest)) {
+-              eachFile { file ->
+-                  // We flatten the unzip as the tarball contains a `facebook-hermes-<SHA>`
+-                  // folder at the top level.
+-                  if (file.relativePath.segments.size() > 1) {
+-                      file.relativePath = new org.gradle.api.file.RelativePath(!file.isDirectory(), file.relativePath.segments.drop(1))
+-                  }
+-              }
++    task unzipHermes(dependsOn: downloadHermes, type: Copy) {
++      from(tarTree(downloadHermes.dest)) {
++        eachFile { file ->
++          // We flatten the unzip as the tarball contains a `facebook-hermes-<SHA>`
++          // folder at the top level.
++          if (file.relativePath.segments.size() > 1) {
++            file.relativePath = new org.gradle.api.file.RelativePath(!file.isDirectory(), file.relativePath.segments.drop(1))
+           }
+-          into(hermesDir)
++        }
+       }
++      into(hermesDir)
++    }
++  }
++
++  if (REACT_NATIVE_VERSION >= 71) {
++    task downloadHermesAAR(type: Download){
++      def hermesAARDownloadDir = new File("${nodeModules}/react-native/android/com/facebook/react/hermes-engine/$REACT_NATIVE_FULL_VERSION")
++      hermesAARDownloadDir.mkdirs()
++      def hermesAARDownloadFile = new File(hermesAARDownloadDir, "hermes-engine-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar")
++
++      src("https://repo1.maven.org/maven2/com/facebook/react/hermes-android/$REACT_NATIVE_FULL_VERSION/hermes-android-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar")
++      onlyIfNewer(false)
++      overwrite(true)
++      dest(hermesAARDownloadFile)
++    }
+   }
+ 
+   task prepareHermes() {
+-      if (REACT_NATIVE_VERSION >= 69) {
+-          if (!isNewArchitectureEnabled()) {
+-              dependsOn(unzipHermes)
+-          }
++    if (REACT_NATIVE_VERSION >= 69) {
++      if (REACT_NATIVE_VERSION >= 71) {
++        dependsOn(downloadHermesAAR)
++      }
+ 
+-          doLast {
+-              def hermesAAR = file("$reactNative/android/com/facebook/react/hermes-engine/$REACT_NATIVE_FULL_VERSION/hermes-engine-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar") // e.g. hermes-engine-0.70.0-rc.1-debug.aar
+-              if (!hermesAAR.exists()) {
+-                  throw new GradleScriptException("Could not find hermes-engine AAR", null)
+-              }
++      if (!isNewArchitectureEnabled()) {
++        dependsOn(unzipHermes)
++      }
+ 
+-              def soFiles = zipTree(hermesAAR).matching({ it.include "**/*.so" })
++      doLast {
++        def hermesAAR = file("$reactNative/android/com/facebook/react/hermes-engine/$REACT_NATIVE_FULL_VERSION/hermes-engine-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar") // e.g. hermes-engine-0.70.0-rc.1-debug.aar
++        if (!hermesAAR.exists()) {
++          throw new GradleScriptException("Could not find hermes-engine AAR", null)
++        }
+ 
+-              copy {
+-                  from soFiles
+-                  from "$reactNative/ReactAndroid/src/main/jni/first-party/hermes/Android.mk"
+-                  into "$thirdPartyNdkDir/hermes"
+-              }
+-          }
+-      } else {
+-          doLast {
+-              def hermesPackagePath = findNodeModulePath(projectDir, "hermes-engine")
+-              if (!hermesPackagePath) {
+-                  throw new GradleScriptException("Could not find the hermes-engine npm package", null)
+-              }
+-
+-              def hermesAAR = file("$hermesPackagePath/android/hermes-debug.aar")
+-              if (!hermesAAR.exists()) {
+-                  throw new GradleScriptException("The hermes-engine npm package is missing \"android/hermes-debug.aar\"", null)
+-              }
+-
+-              def soFiles = zipTree(hermesAAR).matching({ it.include "**/*.so" })
+-
+-              copy {
+-                  from soFiles
+-                  from "$reactNative/ReactAndroid/src/main/jni/first-party/hermes/Android.mk"
+-                  into "$thirdPartyNdkDir/hermes"
+-              }
+-          }
++        def soFiles = zipTree(hermesAAR).matching({ it.include "**/*.so" })
++
++        copy {
++          from soFiles
++          from "$reactNative/ReactAndroid/src/main/jni/first-party/hermes/Android.mk"
++          into "$thirdPartyNdkDir/hermes"
++        }
++      }
++    } else {
++      doLast {
++        def hermesPackagePath = findNodeModulePath(projectDir, "hermes-engine")
++        if (!hermesPackagePath) {
++          throw new GradleScriptException("Could not find the hermes-engine npm package", null)
++        }
++
++        def hermesAAR = file("$hermesPackagePath/android/hermes-debug.aar")
++        if (!hermesAAR.exists()) {
++          throw new GradleScriptException("The hermes-engine npm package is missing \"android/hermes-debug.aar\"", null)
++        }
++
++        def soFiles = zipTree(hermesAAR).matching({ it.include "**/*.so" })
++
++        copy {
++          from soFiles
++          from "$reactNative/ReactAndroid/src/main/jni/first-party/hermes/Android.mk"
++          into "$thirdPartyNdkDir/hermes"
++        }
+       }
++    }
+   }
+ 
+   prepareHermes.mustRunAfter prepareThirdPartyNdkHeaders
+@@ -565,7 +589,22 @@ if (ENABLE_FRAME_PROCESSORS) {
+ 
+   prepareJSC.mustRunAfter prepareHermes
+ 
++  task downloadRnAAR(type: Download) {
++    def rnAARDownloadDir = new File("${nodeModules}/react-native/android/com/facebook/react/react-native/$REACT_NATIVE_FULL_VERSION")
++    rnAARDownloadDir.mkdirs()
++    def rnAARDownloadFile = new File(rnAARDownloadDir, "react-native-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar")
++
++    src("https://repo1.maven.org/maven2/com/facebook/react/react-android/$REACT_NATIVE_FULL_VERSION/react-android-$REACT_NATIVE_FULL_VERSION-${resolveBuildType()}.aar")
++    onlyIfNewer(false)
++    overwrite(true)
++    dest(rnAARDownloadFile)
++  }
++
+   task extractAARHeaders {
++    if(REACT_NATIVE_VERSION >= 71) {
++      dependsOn(downloadRnAAR)
++    }
++
+     doLast {
+       configurations.extractHeaders.files.each {
+         def file = it.absoluteFile
+@@ -582,6 +621,18 @@ if (ENABLE_FRAME_PROCESSORS) {
+ 
+   task extractJNIFiles {
+     doLast {
++      if(REACT_NATIVE_VERSION >= 71) {
++        def rnAarMatcher = "**/react-native/**/*${resolveBuildType()}.aar"
++        def rnAAR = fileTree("$reactNative/android").matching({ it.include rnAarMatcher }).singleFile
++
++        def rnAAR_file = rnAAR.absoluteFile
++        copy {
++          from zipTree(rnAAR_file)
++          into "$buildDir/$rnAAR_file.name"
++          include "jni/**/*"
++        }
++      }
++
+       configurations.extractJNI.files.each {
+         def file = it.absoluteFile
+ 
